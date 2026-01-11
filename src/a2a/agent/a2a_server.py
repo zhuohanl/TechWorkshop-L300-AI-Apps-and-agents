@@ -6,7 +6,7 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import BasePushNotificationSender, InMemoryPushNotificationConfigStore, InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 
-from .agent_executor import SemanticKernelProductManagementExecutor
+from .agent_executor import AgentFrameworkProductManagementExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class A2AServer:
         push_sender = BasePushNotificationSender(self.httpx_client, config_store)
         
         request_handler = DefaultRequestHandler(
-            agent_executor=SemanticKernelProductManagementExecutor(),
+            agent_executor=AgentFrameworkProductManagementExecutor(),
             task_store=InMemoryTaskStore(),
             push_config_store=config_store,
             push_sender=push_sender,
@@ -50,7 +50,7 @@ class A2AServer:
             description=(
                 'Handles customer inquiries about Zava products, including features, pricing, and ranking products based on customer needs.'
             ),
-            tags=['product', 'catalog', 'customer-support', 'semantic-kernel'],
+            tags=['product', 'catalog', 'customer-support', 'agent-framework'],
             examples=[
                 'Which paint roller is best for smooth surfaces?',
                 'Sell me on the benefits of the Zava paint sprayer.',

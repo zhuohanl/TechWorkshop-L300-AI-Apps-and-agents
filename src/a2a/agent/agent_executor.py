@@ -13,16 +13,15 @@ from a2a.utils import (
     new_task,
     new_text_artifact,
 )
-from .product_management_agent import SemanticKernelProductManagementAgent
+from .product_management_agent import AgentFrameworkProductManagementAgent
 
 logger = logging.getLogger(__name__)
 
-
-class SemanticKernelProductManagementExecutor(AgentExecutor):
-    """SemanticKernelProductManagement Executor for A2A Protocol"""
+class AgentFrameworkProductManagementExecutor(AgentExecutor):
+    """AgentFrameworkProductManagement Executor for A2A Protocol"""
 
     def __init__(self):
-        self.agent = SemanticKernelProductManagementAgent()
+        self.agent = AgentFrameworkProductManagementAgent()
 
     async def execute(
         self,

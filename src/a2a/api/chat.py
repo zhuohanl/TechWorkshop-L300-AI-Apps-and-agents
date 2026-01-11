@@ -6,14 +6,14 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from agent.product_management_agent import SemanticKernelProductManagementAgent
+from agent.product_management_agent import AgentFrameworkProductManagementAgent
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 # In-memory session store (in production, use Redis or database)
-product_management_agent = SemanticKernelProductManagementAgent()
+product_management_agent = AgentFrameworkProductManagementAgent()
 active_sessions: Dict[str, str] = {}
 
 class ChatMessage(BaseModel):

@@ -9,31 +9,14 @@ import openai
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from semantic_kernel.agents import ChatCompletionAgent, ChatHistoryAgentThread
-from semantic_kernel.connectors.ai.open_ai import (
-    AzureChatCompletion,
-    OpenAIChatCompletion,
-    OpenAIChatPromptExecutionSettings,
-)
-from semantic_kernel.contents import (
-    FunctionCallContent,
-    FunctionResultContent,
-    StreamingChatMessageContent,
-    StreamingTextContent,
-)
-from semantic_kernel.functions import KernelArguments, kernel_function
-
-if TYPE_CHECKING:
-    from semantic_kernel.connectors.ai.chat_completion_client_base import (
-        ChatCompletionClientBase,
-    )
-    from semantic_kernel.contents import ChatMessageContent
+from agent_framework import AgentThread, TextContent, ChatAgent, BaseChatClient, ai_function
+from agent_framework.openai import OpenAIChatClient
+from agent_framework.azure import AzureOpenAIChatClient
 
 logger = logging.getLogger(__name__)
 load_dotenv()
 
 # region Chat Service Configuration
-
 
 class ChatServices(str, Enum):
     """Enum for supported chat completion services."""
@@ -47,14 +30,14 @@ service_id = 'default'
 
 def get_chat_completion_service(
     service_name: ChatServices,
-) -> 'ChatCompletionClientBase':
+) -> 'BaseChatClient':
     """Return an appropriate chat completion service based on the service name.
 
     Args:
         service_name (ChatServices): Service name.
 
     Returns:
-        ChatCompletionClientBase: Configured chat completion service.
+        BaseChatClient: Configured chat completion service.
 
     Raises:
         ValueError: If the service name is not supported or required environment variables are missing.
@@ -66,17 +49,17 @@ def get_chat_completion_service(
     raise ValueError(f'Unsupported service name: {service_name}')
 
 
-def _get_azure_openai_chat_completion_service() -> AzureChatCompletion:
+def _get_azure_openai_chat_completion_service() -> AzureOpenAIChatClient:
     """Return Azure OpenAI chat completion service with managed identity.
 
     Returns:
-        AzureChatCompletion: The configured Azure OpenAI service.
+        AzureOpenAIChatClient: The configured Azure OpenAI service.
     """
     endpoint = os.getenv('gpt_endpoint')
     deployment_name = os.getenv('gpt_deployment')
     api_version = os.getenv('gpt_api_version')
-    # api_key = os.getenv('gpt_api_key')
-    api_key = None # Force managed identity usage
+    # Intentionally set this to None to enforce using entra id. Key-based auth is not recommended for production.
+    api_key = None
 
     if not endpoint:
         raise ValueError("gpt_endpoint is required")
@@ -100,14 +83,14 @@ def _get_azure_openai_chat_completion_service() -> AzureChatCompletion:
             api_version=api_version,
         )
         
-        return AzureChatCompletion(
+        return AzureOpenAIChatClient(
             service_id=service_id,
             deployment_name=deployment_name,
             async_client=async_client,
         )
     else:
         # Fallback to API key authentication for local development
-        return AzureChatCompletion(
+        return AzureOpenAIChatClient(
             service_id=service_id,
             deployment_name=deployment_name,
             endpoint=endpoint,
@@ -115,16 +98,15 @@ def _get_azure_openai_chat_completion_service() -> AzureChatCompletion:
             api_version=api_version,
         )
 
-
-def _get_openai_chat_completion_service() -> OpenAIChatCompletion:
+def _get_openai_chat_completion_service() -> OpenAIChatClient:
     """Return OpenAI chat completion service.
 
     Returns:
-        OpenAIChatCompletion: Configured OpenAI service.
+        OpenAIChatClient: Configured OpenAI service.
     """
-    return OpenAIChatCompletion(
+    return OpenAIChatClient(
         service_id=service_id,
-        ai_model_id=os.getenv('OPENAI_MODEL_ID'),
+        model_id=os.getenv('OPENAI_MODEL_ID'),
         api_key=os.getenv('OPENAI_API_KEY'),
     )
 
@@ -132,55 +114,50 @@ def _get_openai_chat_completion_service() -> OpenAIChatCompletion:
 # endregion
 
 
-# region Plugin
+# region Get Products
 
-class ProductPlugin:
-    """Retrieve data from Zava's product catalog.
-
-    The Plugin is used by the `product_agent`.
-    """
-
-    @kernel_function(
-        description='Retrieves a set of products based on a natural language user query.'
-    )
-    def get_products(
-        self,
-        question: Annotated[
-            str, 'Natural language query to retrieve products, e.g. "What kinds of paint rollers do you have in stock?"'
-        ],
-    ) -> list[dict[str, Any]]:
-        try:
-            # Simulate product retrieval based on the question
-            # In a real implementation, this would query a database or external service
-            product_dict = [
-                {
-                    "id": "1",
-                    "name": "Eco-Friendly Paint Roller",
-                    "type": "Paint Roller",
-                    "description": "A high-quality, eco-friendly paint roller for smooth finishes.",
-                    "punchLine": "Roll with the best, paint with the rest!",
-                    "price": 15.99
-                },
-                {
-                    "id": "2",
-                    "name": "Premium Paint Brush Set",
-                    "type": "Paint Brush",
-                    "description": "A set of premium paint brushes for detailed work and fine finishes.",
-                    "punchLine": "Brush up your skills with our premium set!",
-                    "price": 25.49
-                },
-                {
-                    "id": "3",
-                    "name": "All-Purpose Paint Tray",
-                    "type": "Paint Tray",
-                    "description": "A durable paint tray suitable for all types of rollers and brushes.",
-                    "punchLine": "Tray it, paint it, love it!",
-                    "price": 9.99
-                }
-            ]
-            return product_dict
-        except Exception as e:
-            return f'Product recommendation failed: {e!s}'
+@ai_function(
+    name='get_products',
+    description='Retrieves a set of products based on a natural language user query.'
+)
+def get_products(
+    self,
+    question: Annotated[
+        str, 'Natural language query to retrieve products, e.g. "What kinds of paint rollers do you have in stock?"'
+    ],
+) -> list[dict[str, Any]]:
+    try:
+        # Simulate product retrieval based on the question
+        # In a real implementation, this would query a database or external service
+        product_dict = [
+            {
+                "id": "1",
+                "name": "Eco-Friendly Paint Roller",
+                "type": "Paint Roller",
+                "description": "A high-quality, eco-friendly paint roller for smooth finishes.",
+                "punchLine": "Roll with the best, paint with the rest!",
+                "price": 15.99
+            },
+            {
+                "id": "2",
+                "name": "Premium Paint Brush Set",
+                "type": "Paint Brush",
+                "description": "A set of premium paint brushes for detailed work and fine finishes.",
+                "punchLine": "Brush up your skills with our premium set!",
+                "price": 25.49
+            },
+            {
+                "id": "3",
+                "name": "All-Purpose Paint Tray",
+                "type": "Paint Tray",
+                "description": "A durable paint tray suitable for all types of rollers and brushes.",
+                "punchLine": "Tray it, paint it, love it!",
+                "price": 9.99
+            }
+        ]
+        return product_dict
+    except Exception as e:
+        return f'Product recommendation failed: {e!s}'
 
 
 # endregion
@@ -199,14 +176,15 @@ class ResponseFormat(BaseModel):
 
 # endregion
 
-# region Semantic Kernel Agent
+
+# region Agent Framework Agent
 
 
-class SemanticKernelProductManagementAgent:
-    """Wraps Semantic Kernel-based agents to handle Zava product management tasks."""
+class AgentFrameworkProductManagementAgent:
+    """Wraps Microsoft Agent Framework-based agents to handle Zava product management tasks."""
 
-    agent: ChatCompletionAgent
-    thread: ChatHistoryAgentThread = None
+    agent: ChatAgent
+    thread: AgentThread = None
     SUPPORTED_CONTENT_TYPES = ['text', 'text/plain']
 
     def __init__(self):
@@ -214,8 +192,8 @@ class SemanticKernelProductManagementAgent:
         chat_service = get_chat_completion_service(ChatServices.AZURE_OPENAI)
 
         # Define an MarketingAgent to handle marketing-related tasks
-        marketing_agent = ChatCompletionAgent(
-            service=chat_service,
+        marketing_agent = ChatAgent(
+            chat_client=chat_service,
             name='MarketingAgent',
             instructions=(
                 'You specialize in planning and recommending marketing strategies for products. '
@@ -224,9 +202,9 @@ class SemanticKernelProductManagementAgent:
             ),
         )
 
-        # Define an MarketingAgent to handle marketing-related tasks
-        ranker_agent = ChatCompletionAgent(
-            service=chat_service,
+        # Define an RankerAgent to sort and recommend results
+        ranker_agent = ChatAgent(
+            chat_client=chat_service,
             name='RankerAgent',
             instructions=(
                 'You specialize in ranking and recommending products based on various criteria. '
@@ -235,34 +213,37 @@ class SemanticKernelProductManagementAgent:
             ),
         )
 
-        product_agent = ChatCompletionAgent(
-            service=chat_service,
+        # Define a ProductAgent to retrieve products from the Zava catalog
+        product_agent = ChatAgent(
+            chat_client=chat_service,
             name='ProductAgent',
-            instructions=(
-                'You specialize in handling product-related requests from customers and employees. '
-                'This includes providing a list of products, identifying available quantities, '
-                'providing product prices, and giving product descriptions as they exist in the product catalog. '
-                'Your goal is to assist customers promptly and accurately with all product-related inquiries.'
+            instructions=("""
+                You specialize in handling product-related requests from customers and employees.
+                This includes providing a list of products, identifying available quantities,
+                providing product prices, and giving product descriptions as they exist in the product catalog.
+                Your goal is to assist customers promptly and accurately with all product-related inquiries.
+                You are a helpful assistant that MUST use the get_products tool to answer all the questions from user.
+                You MUST NEVER answer from your own knowledge UNDER ANY CIRCUMSTANCES.
+                You MUST only use products from the get_products tool to answer product-related questions.
+                Do not ask the user for more information about the products; instead use the get_products tool to find the
+                relevant products and provide the information based on that.
+                Do not make up any product information. Use only the product information from the get_products tool.
+                """
             ),
-            plugins=[ProductPlugin()],
+            tools=get_products,
         )
 
 
         # Define the main ProductManagerAgent to delegate tasks to the appropriate agents
-        self.agent = ChatCompletionAgent(
-            service=chat_service,
+        self.agent = ChatAgent(
+            chat_client=chat_service,
             name='ProductManagerAgent',
             instructions=(
                 "Your role is to carefully analyze the user's request and respond as best as you can. "
                 'Your primary goal is precise and efficient delegation to ensure customers and employees receive accurate and specialized '
                 'assistance promptly.'
             ),
-            plugins=[product_agent, marketing_agent, ranker_agent],
-            arguments=KernelArguments(
-                settings=OpenAIChatPromptExecutionSettings(
-                    response_format=ResponseFormat,
-                )
-            ),
+            tools=[product_agent.as_tool(), marketing_agent.as_tool(), ranker_agent.as_tool()],
         )
 
     async def invoke(self, user_input: str, session_id: str) -> dict[str, Any]:
@@ -278,19 +259,20 @@ class SemanticKernelProductManagementAgent:
         """
         await self._ensure_thread_exists(session_id)
 
-        # Use SK's get_response for a single shot
-        response = await self.agent.get_response(
+        # Use Agent Framework's run for a single shot
+        response = await self.agent.run(
             messages=user_input,
             thread=self.thread,
+            response_format=ResponseFormat,
         )
-        return self._get_agent_response(response.content)
+        return self._get_agent_response(response.text)
 
     async def stream(
         self,
         user_input: str,
         session_id: str,
     ) -> AsyncIterable[dict[str, Any]]:
-        """For streaming tasks we yield the SK agent's invoke_stream progress.
+        """For streaming tasks we yield the Agent Framework agent's run_stream progress.
 
         Args:
             user_input (str): User input message.
@@ -302,72 +284,32 @@ class SemanticKernelProductManagementAgent:
         """
         await self._ensure_thread_exists(session_id)
 
-        plugin_notice_seen = False
-        plugin_event = asyncio.Event()
+        # text_notice_seen = False
+        chunks: list[TextContent] = []
 
-        text_notice_seen = False
-        chunks: list[StreamingChatMessageContent] = []
-
-        async def _handle_intermediate_message(
-            message: 'ChatMessageContent',
-        ) -> None:
-            """Handle intermediate messages from the agent."""
-            nonlocal plugin_notice_seen
-            if not plugin_notice_seen:
-                plugin_notice_seen = True
-                plugin_event.set()
-            # An example of handling intermediate messages during function calling
-            for item in message.items or []:
-                if isinstance(item, FunctionResultContent):
-                    logger.info(
-                        f'SK Function Result:> {item.result} for function: {item.name}'
-                    )
-                elif isinstance(item, FunctionCallContent):
-                    logger.info(
-                        f'SK Function Call:> {item.name} with arguments: {item.arguments}'
-                    )
-                else:
-                    logger.info(f'SK Message:> {item}')
-
-        async for chunk in self.agent.invoke_stream(
+        async for chunk in self.agent.run_stream(
             messages=user_input,
             thread=self.thread,
-            on_intermediate_message=_handle_intermediate_message,
         ):
-            if plugin_event.is_set():
-                yield {
-                    'is_task_complete': False,
-                    'require_user_input': False,
-                    'content': 'Processing function calls...',
-                }
-                plugin_event.clear()
-
-            if any(isinstance(i, StreamingTextContent) for i in chunk.items):
-                if not text_notice_seen:
-                    yield {
-                        'is_task_complete': False,
-                        'require_user_input': False,
-                        'content': 'Building the output...',
-                    }
-                    text_notice_seen = True
-                chunks.append(chunk.message)
+            if chunk.text:
+                chunks.append(chunk.text)
 
         if chunks:
             yield self._get_agent_response(sum(chunks[1:], chunks[0]))
 
     def _get_agent_response(
-        self, message: 'ChatMessageContent'
+        self, message: TextContent
     ) -> dict[str, Any]:
         """Extracts the structured response from the agent's message content.
 
         Args:
-            message (ChatMessageContent): The message content from the agent.
+            message (TextContent): The message content from the agent.
 
         Returns:
             dict: A dictionary containing the content, task completion status, and user input requirement.
         """
         structured_response = ResponseFormat.model_validate_json(
-            message.content
+            message
         )
 
         default_response = {
@@ -404,9 +346,8 @@ class SemanticKernelProductManagementAgent:
         Args:
             session_id (str): Unique identifier for the session.
         """
-        if self.thread is None or self.thread.id != session_id:
-            await self.thread.delete() if self.thread else None
-            self.thread = ChatHistoryAgentThread(thread_id=session_id)
+        if self.thread is None or self.thread.service_thread_id != session_id:
+            self.thread = self.agent.get_new_thread(thread_id=session_id)
 
 
 # endregion
