@@ -15,7 +15,7 @@ This lab has exercises on:
 * Deploy and configure resources
 * Implement a multimodal AI shopping assistant
 * Extend the shopping assistant using the A2A Protocol
-* Observe model utilization in AI Foundry
+* Observe model utilization in Microsoft Foundry
 * Agentic DevOps
 * Red Teaming AI Agents
 * Resource cleanup
@@ -26,5 +26,5 @@ The lab is available as GitHub pages [here](https://microsoft.github.io/TechWork
 
 For running this lab you will need:
 
-* An external MCAPS subscription with access to Microsoft Foundry. Microsoft EMU accounts will not have sufficient privileges to perform all of the actions necessary.
+* An MCAPS subscription with access to Microsoft Foundry. External MCAPS subscriptions are preferred, though internal MCAPS subscriptions should work as well. Microsoft EMU accounts will not have sufficient privileges to perform all of the actions necessary.
 * A desktop, laptop, or virtual machine and access to install software on that machine.
